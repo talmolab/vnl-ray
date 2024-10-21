@@ -106,3 +106,26 @@ class RemoveVisionWrapper(base.EnvironmentWrapper):
 
     def reset(self) -> dm_env.TimeStep:
         return self._convert_timestep(self._environment.reset())
+
+class RemoveObsWrapper:
+    def __init__(self, environment: dm_env.Environment):
+        '''Wrapper for only keeping qpos and qvel in the obs space'''
+        super().__init__(environment)
+        self.env = environment
+
+    def reset(self) -> dm_env.TimeStep:
+        time_step = self.env.reset()
+        return self._filter_obs(time_step)
+
+    def step(self, action) -> dm_env.TimeStep:
+        time_step = self.env.step(action)
+        return self._filter_obs(time_step)
+
+    def _filter_obs(self, time_step):
+        obs = time_step.observation
+        # Assuming `qpos` and `qvel` are in the 'observations' dict of `obs`
+        filtered_obs = {
+            'qpos': obs.get('qpos', []),
+            'qvel': obs.get('qvel', [])
+        }
+        return time_step._replace(observation=filtered_obs)

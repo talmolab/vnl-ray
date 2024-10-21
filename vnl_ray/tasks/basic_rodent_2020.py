@@ -56,7 +56,6 @@ GHOST_OFFSET = np.array((0, 0, 0))
 # Normalize the Observation space -- Namely adding additional
 # dummy origin and dummy task logic to the agent
 
-
 def rodent_escape_bowl(random_state=None):
     """Requires a rodent to climb out of a bowl-shaped terrain."""
 

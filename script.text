@@ -1,0 +1,21 @@
+export PATH="/root/anaconda3/bin:$PATH"; conda init; 
+
+
+# Restart
+cd /root/talmolab-smb/kaiwen/vnl-ray; conda activate flybody; pip install -e .[ray]; conda activate flybody; wandb login 9ce46b480901143a018e3225bdeceb4a85b7160d
+
+# Start:
+# Head 1
+conda activate flybody; cd /root/talmolab-smb/kaiwen/vnl-ray; conda activate flybody; wandb login 9ce46b480901143a018e3225bdeceb4a85b7160d; RAY_memory_monitor_refresh_ms=0 ray start --address='10.244.17.34:6379'
+
+# make sure to start the ray cluster under same dir, otherwise some rendering or checkpointing might be faulty.
+ray job submit -- python vnl_ray/train_dmpo_ray.py
+
+# Head 2:
+conda activate flybody; cd /root/talmolab-smb/kaiwen/vnl-ray; conda activate flybody; wandb login 9ce46b480901143a018e3225bdeceb4a85b7160d; RAY_memory_monitor_refresh_ms=0 ray start --address='10.244.17.34:6379'
+
+# login wandb:
+conda activate flybody; wandb login 9ce46b480901143a018e3225bdeceb4a85b7160d
+
+# Head 3
+conda activate flybody; cd /root/talmolab-smb/kaiwen/vnl-ray; conda activate flybody; wandb login 9ce46b480901143a018e3225bdeceb4a85b7160d; RAY_memory_monitor_refresh_ms=0 ray start --address='10.244.17.34:6379'

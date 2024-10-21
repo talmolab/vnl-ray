@@ -50,6 +50,7 @@ from omegaconf import DictConfig, OmegaConf
 import numpy as np
 from acme import specs
 from acme import wrappers
+from vnl_ray import wrapper as vnl_wrapper
 from acme.tf import utils as tf2_utils
 import sonnet as snt
 import tensorflow as tf
@@ -108,7 +109,7 @@ tasks = {
 @hydra.main(
     version_base=None,
     config_path="./config",
-    config_name="train_config_rodent_imitation",
+    config_name="train_config_generalist_transfer",
 )
 def main(config: DictConfig) -> None:
     print("CONFIG:", config)
@@ -133,6 +134,7 @@ def main(config: DictConfig) -> None:
         env = tasks["run-gaps"]()
         env = wrappers.SinglePrecisionWrapper(env)
         env = wrappers.CanonicalSpecWrapper(env)
+        # env = vnl_wrapper.RemoveObsWrapper(env)
         return env
 
     def environment_factory_two_taps() -> "composer.Environment":
@@ -216,7 +218,7 @@ def main(config: DictConfig) -> None:
         ),
         encoder_layer_sizes=config.learner_network["encoder_layer_sizes"] if use_intention else None,
         decoder_layer_sizes=config.learner_network["decoder_layer_sizes"] if use_intention else None,
-        policy_layer_sizes=config.learner_network["policy_layer_sizes"] if not use_intention else None,
+        # policy_layer_sizes=config.learner_network["policy_layer_sizes"] if not use_intention else None,
         critic_layer_sizes=config.learner_network["critic_layer_sizes"],
         intention_size=config.learner_network["intention_size"] if use_intention else 0,
         use_tfd_independent=True,  # for easier KL calculation
