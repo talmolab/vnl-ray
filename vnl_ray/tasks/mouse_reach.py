@@ -6,7 +6,7 @@ from vnl_ray.tasks.arenas.mouse_arena import MouseReachArena
 from vnl_ray.tasks.mouse_reach_task import MouseReachTask
 from dm_control import mjcf
 
-_CONTROL_TIMESTEP = 0.02
+_CONTROL_TIMESTEP = 0.005
 _PHYSICS_TIMESTEP = 0.001
 
 
@@ -14,9 +14,9 @@ def mouse_reach(random_state=None, actuator_type=None):
     if actuator_type == "muscle":
         mouse_xml_path = "/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/armmodel_atscale_working_balljoint_muscle.xml"
     elif actuator_type == "muscle_simple":
-        mouse_xml_path = "/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/armmodel_atscale_working_balljoint_muscle_simple.xml"
+        mouse_xml_path = "/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/akira_arm_model_v3.xml"
     elif actuator_type == "torque":
-        mouse_xml_path = "/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/armmodel_atscale_working_balljoint_torque.xml"
+        mouse_xml_path = "/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/akira_torque.xml"
     elif actuator_type == "position":
         mouse_xml_path = "/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/armmodel_atscale_working_balljoint_position.xml"
     else:

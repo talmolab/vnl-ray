@@ -31,8 +31,8 @@ class MouseReachTask(composer.Task):
         randomize_pose=False,
         randomize_target=False,
         contact_termination=False,
-        physics_timestep=0.002,
-        control_timestep=0.025,
+        physics_timestep=0.0005,
+        control_timestep=0.001,
     ):
         """
         Initializes the MouseReachTask.
@@ -113,100 +113,90 @@ class MouseReachTask(composer.Task):
         # GENERATE TARGET LISTS
         if self._target_list == "old_targets":
             adjusted_targets = [
-                [0.00119973, -0.00581181, 0.00323079],
-                [-0.0016287, -0.00581181, 0.00440236],
-                [-0.00280027, -0.00581181, 0.00723079],
-                [-0.0016287, -0.00581181, 0.01005922],
-                [0.00119973, -0.00581181, 0.01123079],
-                [0.00402816, -0.00581181, 0.01005922],
-                [0.00519973, -0.00581181, 0.00723079],
-                [0.00402816, -0.00581181, 0.00440236],
+                [0.002,     0.012, -0.003],
+                [0.0005355, 0.012,  0.0005355],
+                [-0.003,    0.012,  0.002],
+                [-0.0065355,0.012,  0.0005355],
+                [-0.008,    0.012, -0.003],
+                [-0.0065355,0.012, -0.0065355],
+                [-0.003,    0.012, -0.008],
+                [0.0005355, 0.012, -0.0065355]
             ]
         elif self._target_list == "new_targets":
-            # Compute the differences in x and y
+            # Compute the differences in x and y between fingertip and shoulder.
             dx = fingertip_pos[0] - shoulder_pos[0]
             dy = fingertip_pos[1] - shoulder_pos[1]
 
-            # Compute the radius in the x-y plane and adjust as needed
+            # Compute the radius in the x-y plane.
             radius_xy = np.sqrt(dx**2 + dy**2)
 
-            # Compute the angle between shoulder and fingertip in x-y plane
+            # Compute the angle between shoulder and fingertip in the x-y plane.
             angle_ft = np.arctan2(dy, dx)
 
-            # Number of points per row
+            # Number of points per row.
             N = 4
 
-            # Target angle (adjust as needed)
+            # Set the target angle (adjust this if needed).
             target_angle = np.pi  # 180 degrees
 
-            # Compute the angular difference (total_span) between angle_ft and target_angle
+            # Compute the angular difference between angle_ft and target_angle.
             total_span = np.arctan2(np.sin(target_angle - angle_ft), np.cos(target_angle - angle_ft))
 
-            # Generate angles from angle_ft towards the target_angle
+            # Generate angles from angle_ft towards target_angle.
             angles = angle_ft + np.linspace(0, total_span, N)
 
-            # Center coordinates (shoulder position)
+            # Use the shoulder position as the center.
             x_center = shoulder_pos[0]
             y_center = shoulder_pos[1]
 
-            # Compute x and y coordinates of the target points
+            # Compute the x and y coordinates for the target points.
             x_points = x_center + radius_xy * np.cos(angles)
             y_points = y_center + radius_xy * np.sin(angles)
 
-            # Define two z positions, z1 and z2, 0.003 units apart
+            # Define two z positions, z1 and z2 (0.003 units apart).
             z1 = fingertip_pos[2]
             z2 = z1 + 0.003
 
-            # Create two rows of z positions
+            # Create two rows of z positions.
             z_points_row1 = np.full(N, z1)
             z_points_row2 = np.full(N, z2)
 
-            # Combine x, y, z into two separate arrays for each row
-            # First row
+            # Combine x, y, z coordinates into two arrays for each row.
             points_row1 = np.vstack((x_points, y_points, z_points_row1)).T
-            # Second row
             points_row2 = np.vstack((x_points, y_points, z_points_row2)).T
 
-            # Combine both rows into a single array of 8 points
+            # Combine both rows into a single array (8 points total).
             circle_points = np.vstack((points_row1, points_row2))
 
-            # Smallest sphere radius
+            # Find the smallest sphere radius.
             r_smallest = min(self._target_sizes)
 
-            # Adjust target positions based on sphere sizes
+            # Adjust target positions based on sphere sizes and apply an x-axis shift.
             adjusted_targets = []
-
-            # Combine both rows into a single array of 8 points
-            circle_points = np.vstack((points_row1, points_row2))
-
-            # Smallest sphere radius
-            r_smallest = min(self._target_sizes)
-
-            # Adjust target positions based on sphere sizes
-            adjusted_targets = []
-
-            # Compute the vector from the fingertip to each target point and adjust positions
+            x_offset = 0.002  # Shift   targets along x-axis so they are in front of the arm.
             for point in circle_points:
                 v = point - fingertip_pos
                 v_mag = np.linalg.norm(v)
-                v_hat = v / v_mag  # Unit vector
-
-                # Compute the shift needed to keep the sphere's edge at the same distance from the fingertip
+                v_hat = v / v_mag  # Unit vector.
                 delta = self._target_size - r_smallest
-                # Adjust the center position
                 adjusted_center = point + delta * v_hat
+                # Apply the x offset to shift the target.
+                adjusted_center[0] += x_offset
                 adjusted_targets.append(adjusted_center)
 
-        # Randomly select one of the adjusted target points
+        # Randomly select one of the adjusted target points.
         target_index = random_state.randint(len(adjusted_targets))
         selected_target = adjusted_targets[target_index]
 
+        # Set the target position in the physics model.
         physics.named.model.geom_pos["mouse/target", "x"] = selected_target[0]
         physics.named.model.geom_pos["mouse/target", "y"] = selected_target[1]
         physics.named.model.geom_pos["mouse/target", "z"] = selected_target[2]
 
-        # Reset failure termination condition
+        # Reset the failure termination condition.
         self._failure_termination = False
+
+        return selected_target
 
     def _is_disallowed_contact(self, contact):
         """
