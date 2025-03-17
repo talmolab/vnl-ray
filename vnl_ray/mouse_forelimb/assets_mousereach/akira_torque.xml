@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mujoco model="mouse">
+	<compiler angle="degree">
+	</compiler>
+	<option timestep="0.0005" gravity="0 0 -9.81" solver="CG" iterations="20" ls_iterations="20"></option>
+	<size njmax="1000" nconmax="400" nkey="1" nuser_jnt="1"/>
+	<visual>
+		<scale framelength="0.5" framewidth="0.01"/>
+	</visual>
+
+	<asset>
+		<material name="target" rgba="0.59999999999999998 0.29999999999999999 0.29999999999999999 0.29999999999999999"/>
+		<texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="0.6 0.8 1" width="256" height="1536"/>
+		<texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1=".1 .2 .3" rgb2=".2 .3 .4"/>
+		<material name="grid" texture="grid" texrepeat="1 1" texuniform="true" reflectance=".2"/>
+		<mesh file="/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/mesh/Bone_Scapula_right_v3.stl"/>
+		<mesh file="/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/mesh/Bone_Humerus_right_v3.stl"/>
+		<mesh file="/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/mesh/Bone_Clavicle_right_v3.stl"/>
+		<mesh file="/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/mesh/Bone_Ulna_right_v3.stl"/>
+		<mesh file="/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/mesh/Bone_Radius_right_v3.stl"/>
+		<mesh file="/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/mesh/Bone_Segments_Hand.stl"/>
+
+	</asset>
+	<!--This stuff can all be left alone-->
+	<worldbody>
+		<light directional="true"/>
+		<body name="ground" euler="0 0 0">
+			<camera name="my_camera" pos="0.04 .004 0.037" fovy="20" quat="0.6532815 0.2705981 0.2705981 0.6532815"/>
+			<camera name="my_camera1" pos="0.04 .004 0.037" fovy="20" quat="0.6532815 0.2705981 0.2705981 0.6532815"/>
+			<geom name="target" type="sphere" size="0.001" material="target" pos="0.002 0.012 0.0" contype="0" conaffinity="0"/>
+			<!-- x-axis in red-->
+			<geom type="ellipsoid" size=".0005" rgba="1 0 0 .1" fromto="0 0 0 .01 0 0"  contype="0" conaffinity="0"/>
+			<!-- y-axis in green-->
+			<geom type="ellipsoid" size=".0005" rgba="0 1 0 .1" fromto="0 0 0 0 .01 0"  contype="0" conaffinity="0"/>
+			<!-- z-axis in blue-->
+			<geom type="ellipsoid" size=".0005" rgba="0 0 1 .1" fromto="0 0 0 0 0 .01"  contype="0" conaffinity="0"/>
+
+			<!--SOB Clavicle-->
+			<body name="clavicle" pos="0 0 0" euler="0 0 0">
+				<!--Mesh Geom-->
+				<geom type="mesh" mesh="Bone_Clavicle_right_v3" pos="0 0 0.0005"  contype="0" conaffinity="0"/>
+			
+				<!--SOB Scapula-->
+				<body name="scapula" pos="-0.0001 -0.0001 0.0005" euler="-30 -15 0">
+					<!--Mesh Geom-->
+					<geom type="mesh" mesh="Bone_Scapula_right_v3" pos="0.0 0.0 0.0"  contype="0" conaffinity="0"/>
+					<!--SOB Humerus-->
+					<body name="humerus" pos="0 0.0007 -0.0002" euler="-15 0 0">						
+						<!-- Glenohumeral (aka shoulder) Joint-->					
+						<site name="shoulder_joint_viz_large" pos="0 0 0" rgba="1 .2 .6 .2" size="0.0010"/>
+						<inertial pos="-0.0005 0.0003 -0.004" mass="0.001258" diaginertia="3e-8 3e-8 3e-8"/>
+						<site name="interial_center_humerus" pos="-0.0005 0.0003 -0.004" rgba=".6 .6 .6 .6" size="0.0005"/>	
+												<!--Mesh Geom-->
+						<geom type="mesh" mesh="Bone_Humerus_right_v3" pos="0.0 0.0  0.0"  contype="0" conaffinity="0"/>
+
+						<joint name="sh_elv" type="hinge" pos="0 0 0" axis="0 1 0" stiffness="0.03" damping="0.005" range="-70 0" limited="true"/>
+						<!-- Extension Joint: Yaw around Z-axis -->
+						<joint name="sh_extension" type="hinge" pos="0 0 0" axis="0 0 1" stiffness="0.03" damping="0.005" range="-70 40" limited="true"/>
+						<!-- Rotation Joint: Roll around X-axis -->
+						<joint name="sh_rotation" type="hinge" pos="0 0 0" axis="1 0 0" stiffness="0.03" damping="0.005" range="-25 89" limited="true"/>
+
+						<!--SOB Ulna-->
+						<body name="ulna" pos="-0.0005 0.0003 -0.0068" euler="-15 0 0">
+							<!--Mesh Geom-->
+							<geom type="mesh" mesh="Bone_Ulna_right_v3" pos="0.0 0.0 0.0"  contype="0" conaffinity="0"/>
+							
+							<!-- Elbow Joint -->
+							<joint name="elbow_joint" pos="0 0 0" axis="1 0 0" stiffness="0.03" damping="0.005" range="-80 90" limited="true"/>
+							<inertial pos="-0.0009 0.004 0.0005" mass="0.0001258" diaginertia="3e-8 3e-8 3e-8"/>
+							<site name="elbow_joint_viz_large" pos="0 0 0" rgba="1 .2 .6 .2" size="0.0005"/>
+							<site name="interial_center_ulna" pos="-0.0009 0.004 0.0005" rgba=".6 .6 .6 .6" size="0.0005"/>
+
+							<!--SOB Radius-->
+							<body name="radius" pos="0.00035 0.0002 0.0002" euler="0 0 0">
+								<!--Mesh Geom-->
+								<geom type="mesh" mesh="Bone_Radius_right_v3" pos="0.0 0.0 0.0"  contype="0" conaffinity="0"/>
+
+								<!--Attachement-->
+								<!--Biceps Long Head-->
+								<site name="Biceps_Long_Insertion" pos="-0.0002 0.0001 0.0001" rgba=".1 .2 .6 .5" size="0.0002"/>
+								<body name="hand" pos="-0.0015 0.007 0.001" euler="0 0 0">
+										<!-- <site name="hand_viz_large" pos="0.0 0.0 0.0" rgba=".1 1 .6 .2" size="0.001"/>	 -->
+										<!-- <geom type="mesh" mesh="Bone_Segments_Hand" pos=".009 -.006 -0.0055" euler="-20 -50 -75"  contype="0" conaffinity="0"/>		 -->
+										<geom name="finger_tip" type="sphere" size="0.001" material="target" pos="0.0 0.0 0.0" contype="0" conaffinity="0"/>					
+										<!-- <inertial pos="-0.0002 0.002 0.0001" mass="0.00071" diaginertia="7e-08 7e-08 7e-08"/>
+										<site name="interial_center_hand" pos="-0.0002 0.002 0.0001" rgba=".6 .6 .6 .1" size="0.0008"/> -->
+								</body>
+							</body>
+						</body>
+					</body>
+				</body>
+			</body>
+		</body>
+	</worldbody>
+	<actuator>
+		<motor name="sh_elv_act" joint="sh_elv" ctrllimited="true" ctrlrange="-.1 .1" forcerange="-.1 .1"/>
+		<motor name="sh_extension_act" joint="sh_extension" ctrllimited="true" ctrlrange="-.1 .1" forcerange="-.1 .1"/>
+		<motor name="sh_rotation_act" joint="sh_rotation" ctrllimited="true" ctrlrange="-.1 .2" forcerange="-.1 .1"/>
+		<motor name="elbow_act" joint="elbow_joint" ctrllimited="true" ctrlrange="-.1 .1" forcerange="-.1 .1"/>
+	</actuator>
+</mujoco>
