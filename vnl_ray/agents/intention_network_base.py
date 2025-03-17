@@ -4,6 +4,7 @@ import tensorflow as tf
 import sonnet as snt
 from vnl_ray.agents.policy_network_activations import MLP_activations
 from typing import List, Sequence, Callable, Optional, Dict
+import tensorflow_probability as tfp
 
 def _uniform_initializer():
     return tf.initializers.VarianceScaling(distribution="uniform", mode="fan_out", scale=0.333)
@@ -69,7 +70,12 @@ class TransparentSequential(snt.Module):
         activations = {}
         x = inputs
         for i, layer in enumerate(self._layers):
-            if hasattr(layer, "__call__") and "return_activations" in layer.__call__.__code__.co_varnames:
+            # Try to safely check if the layer's __call__ supports return_activations.
+            try:
+                supports_return = "return_activations" in layer.__call__.__code__.co_varnames
+            except AttributeError:
+                supports_return = False
+            if supports_return:
                 if return_activations:
                     x, act = layer(x, return_activations=True)
                     activations[f"layer_{i}"] = act
@@ -179,7 +185,15 @@ class IntentionNetwork(snt.Module):
             self.high_level_encoder = TransparentSequential(
                 [
                     tf2_utils.batch_concat,
-                    MLP_activations(layer_sizes=encoder_layer_sizes, activation=tf.nn.elu, activate_final=True),
+                    MLP_activations(
+                        output_sizes=encoder_layer_sizes,
+                        w_init=None,
+                        b_init=None,
+                        with_bias=True,
+                        activation=tf.nn.elu,
+                        dropout_rate=None,
+                        activate_final=True
+                    ),
                     networks.MultivariateNormalDiagHead(
                         num_dimensions=high_level_intention_size,
                         min_scale=min_scale,
@@ -192,7 +206,15 @@ class IntentionNetwork(snt.Module):
             )
             self.mid_level_encoder = TransparentSequential(
                 [
-                    MLP_activations(layer_sizes=mid_layer_sizes, activation=tf.nn.elu, activate_final=True),
+                    MLP_activations(
+                        output_sizes=mid_layer_sizes,
+                        w_init=None,
+                        b_init=None,
+                        with_bias=True,
+                        activation=tf.nn.elu,
+                        dropout_rate=None,
+                        activate_final=True
+                    ),
                     networks.MultivariateNormalDiagHead(
                         intention_size,
                         min_scale=min_scale,
@@ -207,7 +229,15 @@ class IntentionNetwork(snt.Module):
             self.encoder = TransparentSequential(
                 [
                     tf2_utils.batch_concat,
-                    MLP_activations(layer_sizes=encoder_layer_sizes, activation=tf.nn.elu, activate_final=True),
+                    MLP_activations(
+                        output_sizes=encoder_layer_sizes,
+                        w_init=None,
+                        b_init=None,
+                        with_bias=True,
+                        activation=tf.nn.elu,
+                        dropout_rate=None,
+                        activate_final=True
+                    ),
                     networks.MultivariateNormalDiagHead(
                         intention_size,
                         min_scale=min_scale,
@@ -256,7 +286,11 @@ class IntentionNetwork(snt.Module):
                 activations_dict["encoder"] = enc_acts
             else:
                 intentions = self.encoder(task_obs)
-        concatenated = tf.concat([intentions, egocentric_obs], axis=-1)
+        if isinstance(intentions, tfp.distributions.Distribution):
+            intentions_tensor = intentions.mean()
+        else:
+            intentions_tensor = intentions
+        concatenated = tf.concat([intentions_tensor, egocentric_obs], axis=-1)
         if self.return_activations or return_intentions_dist:
             actions, dec_acts = self.decoder(tf2_utils.batch_concat(concatenated), return_activations=True)
             activations_dict["decoder"] = dec_acts
