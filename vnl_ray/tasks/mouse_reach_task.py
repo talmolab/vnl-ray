@@ -31,8 +31,9 @@ class MouseReachTask(composer.Task):
         randomize_pose=False,
         randomize_target=False,
         contact_termination=False,
-        physics_timestep=0.0005,
+        physics_timestep=0.001,
         control_timestep=0.001,
+        config=None,
     ):
         """
         Initializes the MouseReachTask.
@@ -54,8 +55,14 @@ class MouseReachTask(composer.Task):
         self._randomize_target = randomize_target
         self._contact_termination = contact_termination
         self._target_list = target_list
+        self._config = config
 
         self._reward_keys = ["distance_reward"]
+
+        # Get margin from config, default to 0.01 if not provided
+        self._margin = 0.006
+        if self._config and "run_config" in self._config and "margin" in self._config.run_config:
+            self._margin = self._config.run_config.margin
 
         # Attach the mouse to the arena
         self._arena.attach(self._mouse)
@@ -112,15 +119,18 @@ class MouseReachTask(composer.Task):
 
         # GENERATE TARGET LISTS
         if self._target_list == "old_targets":
+            # adjusted_targets = [
+            #     [0.0025355, 0.012, -0.0024645],  # previous runs: [0.0025355, 0.012, -0.0024645]
+            # ]
             adjusted_targets = [
-                [0.002,     0.012, -0.003],
-                [0.0005355, 0.012,  0.0005355],
-                [-0.003,    0.012,  0.002],
-                [-0.0065355,0.012,  0.0005355],
-                [-0.008,    0.012, -0.003],
-                [-0.0065355,0.012, -0.0065355],
-                [-0.003,    0.012, -0.008],
-                [0.0005355, 0.012, -0.0065355]
+                [0.004, 0.012, -0.006],
+                [0.0025355, 0.012, -0.0024645],
+                [-0.001, 0.012, -0.001],
+                [-0.0045355, 0.012, -0.0024645],
+                [-0.006, 0.012, -0.006],
+                [-0.0045355, 0.012, -0.0095355],
+                [-0.001, 0.012, -0.011],
+                [0.0025355, 0.012, -0.0095355],
             ]
         elif self._target_list == "new_targets":
             # Compute the differences in x and y between fingertip and shoulder.
@@ -256,7 +266,10 @@ class MouseReachTask(composer.Task):
         finger_to_target_dist = np.linalg.norm(
             physics.named.data.geom_xpos["mouse/target"] - physics.named.data.geom_xpos["mouse/finger_tip"]
         )
-        reward = rewards.tolerance(finger_to_target_dist, bounds=(0, self._target_size), margin=0.006)
+
+        # Use the margin from config instead of hardcoded value
+        reward = rewards.tolerance(finger_to_target_dist, bounds=(0, self._target_size), margin=self._margin)
+
         self.last_reward_channels = {"distance_reward": reward}
         return reward
 
