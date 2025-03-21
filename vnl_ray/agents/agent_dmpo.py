@@ -24,6 +24,7 @@ import tensorflow as tf
 from vnl_ray.agents import learning_dmpo
 from vnl_ray.agents.actors import DelayedFeedForwardActor
 from vnl_ray.agents.intention_network_base import IntentionNetwork
+from vnl_ray.agents.utils_sonnet import Sequential
 
 
 @dataclasses.dataclass
@@ -127,7 +128,7 @@ class DMPONetworks:
             stack += [network_utils.StochasticSamplingHead()]
 
         # Return a network which sequentially evaluates everything in the stack.
-        return snt.Sequential(stack)
+        return Sequential(stack)
 
 
 class DMPOBuilder:
@@ -379,7 +380,7 @@ class DMPO(agent.Agent):
         networks = (online_networks, target_networks)
 
         # Create the behavior policy.
-        behavior_network = snt.Sequential(
+        behavior_network = Sequential(
             [
                 online_networks.observation_network,
                 online_networks.policy_network,

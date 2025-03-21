@@ -62,7 +62,13 @@ class DelayedFeedForwardActor(core.Actor):
         batched_observation = tf2_utils.add_batch_dim(observation)
 
         # Compute the policy, conditioned on the observation.
-        policy = self._policy_network(batched_observation)
+        policy_output = self._policy_network(batched_observation)
+
+        # Handle the case when policy_network returns a tuple (distribution, activations)
+        if isinstance(policy_output, tuple):
+            policy = policy_output[0]
+        else:
+            policy = policy_output
 
         # Sample from the policy if it is stochastic.
         action = policy.sample() if isinstance(policy, tfd.Distribution) else policy

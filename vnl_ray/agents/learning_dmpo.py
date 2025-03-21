@@ -21,6 +21,7 @@ tfd = tfp.distributions
 
 from vnl_ray.utils import vision_rollout_and_render
 from vnl_ray.agents.intention_network_base import IntentionNetwork
+from vnl_ray.agents.utils_sonnet import Sequential
 
 # inject our wandb logger for learner only
 
@@ -147,7 +148,7 @@ class DistributionalMPOLearner(acme.Learner):
         self._replay_server_addresses = replay_server_addresses
 
         # Expose the variables.
-        policy_network_to_expose = snt.Sequential([self._target_observation_network, self._target_policy_network])
+        policy_network_to_expose = Sequential([self._target_observation_network, self._target_policy_network])
         self._variables = {
             "critic": self._target_critic_network.variables,
             "policy": policy_network_to_expose.variables,
@@ -173,7 +174,7 @@ class DistributionalMPOLearner(acme.Learner):
                 "num_steps": self._num_steps,
             }
             if isinstance(self._target_policy_network, IntentionNetwork):
-                #objects_to_save["policy_decoder"] = self._target_policy_network.high_level_encoder
+                # objects_to_save["policy_decoder"] = self._target_policy_network.high_level_encoder
                 if self._target_policy_network.use_multi_encoder:
                     objects_to_save["policy_high_level_encoder"] = self._target_policy_network.high_level_encoder
                     objects_to_save["policy_mid_level_encoder"] = self._target_policy_network.mid_level_encoder
@@ -188,7 +189,7 @@ class DistributionalMPOLearner(acme.Learner):
             )
 
             objects_to_save = {
-                "policy-0": snt.Sequential([self._target_observation_network, self._target_policy_network]),
+                "policy-0": Sequential([self._target_observation_network, self._target_policy_network]),
                 # "policy-only-no-obs-network-0": snt.Sequential([self._target_policy_network]), '
                 # we don't need to do kickstarting for now
             }
@@ -299,14 +300,28 @@ class DistributionalMPOLearner(acme.Learner):
             # the observation network training.
             o_t = tf.stop_gradient(self._target_observation_network(transitions.next_observation))
 
-            # Get online and target action distributions from policy networks.
-            # we calculate the losses on the online action distribution
-
+            # Get online and target action distributions from policy networks
             target_action_distribution = self._target_policy_network(o_t)
+
+            # We don't want to unpack a tuple when the network just returns a distribution
+
             if self._KL_regularized:
-                online_action_distribution, intentions_dist = self._policy_network(o_t, return_intentions_dist=True)
+                online_result = self._policy_network(o_t, return_intentions_dist=True)
+                if isinstance(online_result, tuple):
+                    if len(online_result) == 2:
+                        online_action_distribution, intentions_dist = online_result
+                else:
+                    # If online_result is not a tuple but we need intentions_dist for KL regularization
+                    # We have a problem - let's raise a more helpful error
+                    raise ValueError(
+                        f"Expected policy network to return a tuple with intentions_dist when KL_regularized=True, "
+                        f"but got {type(online_result).__name__}"
+                    )
             else:
                 online_action_distribution = self._policy_network(o_t)
+                # Handle case where policy returns a tuple even when we don't request intentions
+                if isinstance(online_action_distribution, tuple):
+                    online_action_distribution = online_action_distribution[0]
 
             # Sample actions to evaluate policy; of size [N, B, ...].
             sampled_actions = target_action_distribution.sample(self._num_samples)
@@ -374,7 +389,7 @@ class DistributionalMPOLearner(acme.Learner):
             print("DEBUG: IN LEARNER KL Weights: ", self._KL_weights)
             # compute the KL regularization costs
             if self._KL_regularized:
-                KL_intention = intentions_dist.kl_divergence(self._intention_std_normal_dist)  # TODO
+                KL_intention = intentions_dist.kl_divergence(self._intention_std_normal_dist)
                 KL_action = online_action_distribution.kl_divergence(self._action_std_normkal_dist)
                 # apply beta weights to the KL loss
                 KL_intention_loss = tf.reduce_mean(KL_intention * self._KL_weights[0])

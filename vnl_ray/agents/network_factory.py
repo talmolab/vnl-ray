@@ -13,6 +13,8 @@ from vnl_ray.agents.vis_net import VisNetRodent
 
 from vnl_ray.agents.policy_network_activations import IntermediateActivationsPolicyNetwork
 from vnl_ray.agents.utils_intention import separate_observation
+from vnl_ray.agents.utils_sonnet import Sequential
+
 
 def network_factory_d4pg(
     action_spec,
@@ -87,7 +89,9 @@ def network_factory_dmpo(
     """Networks for DMPO agent."""
     action_size = np.prod(action_spec.shape, dtype=int)
 
-    policy_network = IntermediateActivationsPolicyNetwork(policy_layer_sizes, action_size, tanh_mean, init_sigma, fixed_sigma, use_tfd_independent) # record activations
+    policy_network = IntermediateActivationsPolicyNetwork(
+        policy_layer_sizes, action_size, tanh_mean, init_sigma, fixed_sigma, use_tfd_independent
+    )  # record activations
 
     # The multiplexer concatenates the (maybe transformed) observations/actions.
     critic_network = networks.CriticMultiplexer(
@@ -140,6 +144,7 @@ def make_network_factory_dmpo(
         )
 
     return network_factory
+
 
 def policy_loss_module_dmpo(
     epsilon: float = 0.1,
