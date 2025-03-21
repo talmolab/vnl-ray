@@ -12,6 +12,7 @@ from vnl_ray.agents import losses_mpo
 from vnl_ray.agents.utils_intention import separate_observation
 from vnl_ray.agents.intention_network_base import IntentionNetwork
 from vnl_ray.agents.vis_net import VisNetRodent
+from vnl_ray.agents.utils_sonnet import Sequential
 
 
 def network_factory_dmpo(
@@ -50,6 +51,7 @@ def network_factory_dmpo(
         decoder_layer_sizes=decoder_layer_sizes,
         mid_layer_sizes=mid_layer_sizes,
         high_level_intention_size=high_level_intention_size,
+        return_activations=False,  # Changed to False to avoid accidental activation returns
     )
 
     # The multiplexer concatenates the (maybe transformed) observations/actions.
