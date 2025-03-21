@@ -4,6 +4,7 @@ run_config:
   task_name: mouse_reach
   run_name:  mouse-forelimb-reach-muscle
   actuator_type: torque
+  margin: 0.006
 
 obs_network:
   # observation network params
@@ -24,7 +25,7 @@ learner_network:
   encoder_layer_sizes: [512,512,512]
   decoder_layer_sizes: [512,512,512]
   critic_layer_sizes: [512,512,512]
-  intention_size: 60
+  intention_size: 3
   use_multi_decoder: false
 
 learner_params:
@@ -38,12 +39,15 @@ learner_params:
   checkpoint_to_load:
   # evaluator params
   eval_average_over: 500
-  discount: .95
+  discount: .99
+  # swap_decoder_with_jax: true
+  # decoder_h5_path: "/root/vast/eric/track-mjx/track_mjx/ppo_policy_weights.h5"
+  # froze_decoder: true 
 
 env_params:
   num_actors: 25
   num_replay_servers: 2
-  physics_timestep: 0.0005
+  physics_timestep: 0.001
 
 eval_params:
   eval_average_over: 500
