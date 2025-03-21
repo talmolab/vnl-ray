@@ -234,6 +234,12 @@ def main(config: DictConfig) -> None:
     # This callable will be calculating penalization cost by converting canonical
     # actions to real (not wrapped) environment actions inside DMPO agent.
     penalization_cost = None  # PenalizationCostRealActions(dummy_env.environment.action_spec())
+
+    # HARDCODED checkpoint directory to ensure correct path
+    checkpoint_dir = "/root/vast/eric/vnl-ray/training/ray-mouse-mouse_reach-ckpts/"
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    print(f"Using hardcoded checkpoint directory: {checkpoint_dir}")
+
     # Distributed DMPO agent configuration.
     dmpo_config = DMPOConfig(
         num_actors=config.env_params["num_actors"],
@@ -264,7 +270,7 @@ def main(config: DictConfig) -> None:
         logger=make_default_logger,
         logger_save_csv_data=False,
         checkpoint_max_to_keep=None,
-        checkpoint_directory=f"./training/ray-{config.run_config['agent_name']}-{config.run_config['task_name']}-ckpts/",
+        checkpoint_directory=checkpoint_dir,
         checkpoint_to_load=config.learner_params["checkpoint_to_load"],
         print_fn=None,  # print # this causes issue pprint does not work
         userdata=dict(),
@@ -276,15 +282,18 @@ def main(config: DictConfig) -> None:
         kickstart_epsilon=(
             config.learner_params["kickstart_epsilon"] if "kickstart_epsilon" in config.learner_params else 0
         ),
-        time_delta_minutes=30,
+        time_delta_minutes=5,
         eval_average_over=config.eval_params["eval_average_over"],
-        KL_weights=(0, 0),
+        KL_weights=(0, 0),  # Keep KL regularization for intention space only
         # specify the KL with intention & action output layer # do not penalize the output layer # disabled it for now.
         load_decoder_only=(
             config.learner_params["load_decoder_only"] if "load_decoder_only" in config.learner_params else False
         ),
         froze_decoder=config.learner_params["froze_decoder"] if "froze_decoder" in config.learner_params else False,
     )
+
+    # Print absolute checkpoint directory path for debugging
+    print(f"Checkpoint directory (absolute): {os.path.abspath(dmpo_config.checkpoint_directory)}")
 
     dmpo_dict_config = dataclasses.asdict(dmpo_config)
     merged_config = dmpo_dict_config | OmegaConf.to_container(config)  # merged two config
@@ -437,6 +446,13 @@ def main(config: DictConfig) -> None:
     checkpointer_dir, snapshotter_dir = learner.get_checkpoint_dir()
     print("Checkpointer directory:", checkpointer_dir)
     print("Snapshotter directory:", snapshotter_dir)
+    # Verify directory exists and is writable
+    if not os.path.exists(checkpointer_dir):
+        print(f"WARNING: Checkpoint directory {checkpointer_dir} does not exist!")
+    elif not os.access(checkpointer_dir, os.W_OK):
+        print(f"WARNING: Checkpoint directory {checkpointer_dir} is not writable!")
+    else:
+        print(f"Checkpoint directory {checkpointer_dir} exists and is writable ✓")
 
     # === Create Actors and Evaluator.
 
