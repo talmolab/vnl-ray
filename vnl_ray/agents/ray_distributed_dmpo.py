@@ -35,10 +35,13 @@ from vnl_ray.agents import agent_dmpo
 from vnl_ray.agents.actors import DelayedFeedForwardActor
 from vnl_ray.utils import vision_rollout_and_render, rollout_and_render, render_with_rewards
 from vnl_ray.agents.utils_tf import TestPolicyWrapper
+from vnl_ray.agents.decoder_swap_utils import swap_decoder_with_jax
 
 # logging & plotting
 from matplotlib import pyplot as plt
 from io import BytesIO
+
+from vnl_ray.agents.utils_sonnet import Sequential
 
 
 @dataclasses.dataclass
@@ -67,6 +70,8 @@ class DMPOConfig:
     checkpoint_to_load: str | None = None  # Path to checkpoint.
     load_decoder_only: bool = False  # whether only loads decoder
     froze_decoder: bool = False  # whether we froze the weight of the decoder
+    swap_decoder_with_jax: bool = False  # whether to swap decoder with JAX decoder
+    decoder_h5_path: str = ""  # path to h5 file with decoder weights
     checkpoint_max_to_keep: int | None = 1  # None: keep all checkpoints.
     checkpoint_directory: str | None = "~/ray-ckpts/"  # None: no checkpointing.
     time_delta_minutes: float = 30
@@ -145,6 +150,22 @@ class Learner(DistributionalMPOLearner):
         self._reverb_clients = [reverb.Client(addr) for addr in replay_server_addresses.values()]
         self._label = label
 
+        # Ensure checkpoint directory exists and is absolute
+        if self._config.checkpoint_directory:
+            # Force the correct path pattern
+            if "/root/vast/vnl-ray/" in self._config.checkpoint_directory:
+                self._config.checkpoint_directory = self._config.checkpoint_directory.replace(
+                    "/root/vast/vnl-ray/", "/root/vast/eric/vnl-ray/"
+                )
+                print(f"Corrected checkpoint path to: {self._config.checkpoint_directory}")
+            elif not self._config.checkpoint_directory.startswith("/root/vast/eric/vnl-ray/"):
+                # Hardcode the path if it doesn't already have the correct prefix
+                self._config.checkpoint_directory = "/root/vast/eric/vnl-ray/training/ray-mouse-mouse_reach-ckpts/"
+                print(f"Reset to hardcoded checkpoint path: {self._config.checkpoint_directory}")
+
+            os.makedirs(self._config.checkpoint_directory, exist_ok=True)
+            print(f"Ensuring checkpoint directory exists: {self._config.checkpoint_directory}")
+
         def wrapped_network_factory(action_spec):
             networks_dict = network_factory(action_spec)
             networks = agent_dmpo.DMPONetworks(
@@ -163,6 +184,49 @@ class Learner(DistributionalMPOLearner):
         # Initialize the networks.
         online_networks.init(environment_spec)
         target_networks.init(environment_spec)
+
+        # Check if we should swap the decoder with a JAX decoder
+        if dmpo_config.swap_decoder_with_jax and dmpo_config.decoder_h5_path:
+            # This assumes the policy network has an 'intention_network' attribute
+            # that contains the intention network with decoder
+            if hasattr(online_networks.policy_network, "intention_network"):
+                #                 print(f"\n======================================================")
+                #                 print(f"SWAPPING DECODER: Replacing standard decoder with JAX decoder")
+                #                 print(f"H5 CHECKPOINT PATH: {dmpo_config.decoder_h5_path}")
+                #                 print(f"======================================================\n")
+
+                decoder_layer_sizes = dmpo_config.userdata.get("decoder_layer_sizes", [512, 512, 512])
+                if (
+                    "learner_network" in dmpo_config.userdata.get("config", {})
+                    and "decoder_layer_sizes" in dmpo_config.userdata["config"]["learner_network"]
+                ):
+                    decoder_layer_sizes = dmpo_config.userdata["config"]["learner_network"]["decoder_layer_sizes"]
+
+                #                 print(f"Using decoder layer sizes: {decoder_layer_sizes}")
+
+                swap_decoder_with_jax(
+                    online_networks.policy_network.intention_network,
+                    decoder_h5_path=dmpo_config.decoder_h5_path,
+                    action_size=environment_spec.actions.shape[0],
+                    layer_sizes=decoder_layer_sizes,
+                    min_scale=0.1,
+                    freeze_weights=dmpo_config.froze_decoder,
+                )
+
+                # Also swap the target network's decoder
+                if hasattr(target_networks.policy_network, "intention_network"):
+                    #                     print(f"Also swapping target network decoder...")
+                    swap_decoder_with_jax(
+                        target_networks.policy_network.intention_network,
+                        decoder_h5_path=dmpo_config.decoder_h5_path,
+                        action_size=environment_spec.actions.shape[0],
+                        layer_sizes=decoder_layer_sizes,
+                        min_scale=0.1,
+                        freeze_weights=dmpo_config.froze_decoder,
+                    )
+
+        # print(f"\n✓ DECODER SWAP SUCCESSFULLY COMPLETED FOR ALL NETWORKS")
+        # print(f"======================================================\n")
 
         datasets = [
             self._make_dataset_iterator(c) for c in self._reverb_clients
@@ -191,6 +255,11 @@ class Learner(DistributionalMPOLearner):
 
         # Maybe checkpoint and snapshot the learner (saved in ~/acme/).
         checkpoint_enable = self._config.checkpoint_directory is not None
+        if checkpoint_enable:
+            print(f"Checkpointing enabled. Saving to: {self._config.checkpoint_directory}")
+            print(f"Checkpoint interval: {self._config.time_delta_minutes} minutes")
+        else:
+            print("WARNING: Checkpointing is disabled!")
 
         # Have to call superclass constructor in this way.
         # Solved with Ray issue:  https://github.com/ray-project/ray/issues/449
@@ -227,6 +296,16 @@ class Learner(DistributionalMPOLearner):
             froze_decoder=self._config.froze_decoder,
         )
 
+        # Verify checkpoint directories after initialization
+        if self._checkpointer is not None:
+            print(f"Checkpointer initialized with directory: {self._checkpointer._checkpoint_dir}")
+            if not os.path.exists(self._checkpointer._checkpoint_dir):
+                print(f"WARNING: Checkpointer directory does not exist: {self._checkpointer._checkpoint_dir}")
+            elif not os.access(self._checkpointer._checkpoint_dir, os.W_OK):
+                print(f"WARNING: Checkpointer directory not writable: {self._checkpointer._checkpoint_dir}")
+            else:
+                print(f"Checkpointer directory exists and is writable: {self._checkpointer._checkpoint_dir}")
+
     def _step(self, iterator):
         # Workaround to access _step in DistributionalMPOLearner:
         # @tf.function
@@ -248,7 +327,12 @@ class Learner(DistributionalMPOLearner):
     def get_checkpoint_dir(self):
         """Return Checkpointer and Snapshotter directories, if any."""
         if self._checkpointer is not None:
-            return self._checkpointer._checkpoint_dir, self._snapshotter.directory
+            checkpointer_dir = self._checkpointer._checkpoint_dir
+            snapshotter_dir = self._snapshotter.directory if self._snapshotter else None
+            print(f"Current checkpointer directory: {checkpointer_dir}")
+            print(f"Current snapshotter directory: {snapshotter_dir}")
+            return checkpointer_dir, snapshotter_dir
+        print("WARNING: No checkpointer available!")
         return None, None
 
     def _make_dataset_iterator(
@@ -329,7 +413,7 @@ class EnvironmentLoop(acme.EnvironmentLoop):
 
         if actor_or_evaluator == "actor":
             # Actor: sample from policy_network distribution.
-            policy_network = snt.Sequential(
+            policy_network = Sequential(
                 [
                     networks.observation_network,
                     networks.policy_network,
@@ -341,7 +425,7 @@ class EnvironmentLoop(acme.EnvironmentLoop):
 
         elif actor_or_evaluator == "evaluator":
             # Evaluator: get mean from policy_network distribution.
-            policy_network = snt.Sequential(
+            policy_network = Sequential(
                 [
                     networks.observation_network,
                     networks.policy_network,
