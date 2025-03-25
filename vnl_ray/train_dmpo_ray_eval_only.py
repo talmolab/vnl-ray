@@ -24,6 +24,7 @@ from ray.util.scheduling_strategies import (
 from ray.util.placement_group import placement_group
 import logging
 import os
+from pathlib import Path
 
 os.environ["RAY_memory_usage_threshold"] = "1"
 
@@ -60,6 +61,7 @@ from vnl_ray.agents.remote_as_local_wrapper import RemoteAsLocal
 from vnl_ray.agents.counting import PicklableCounter
 from vnl_ray.agents.network_factory import policy_loss_module_dmpo
 from vnl_ray.agents.losses_mpo import PenalizationCostRealActions
+from vnl_ray.agents import agent_dmpo  # Add this import for DMPONetworks
 from vnl_ray.tasks.basic_rodent_2020 import (
     rodent_run_gaps,
     rodent_maze_forage,
@@ -103,6 +105,90 @@ tasks = {
     "humanoid_imitation": walk_humanoid,
     "mouse_reach": mouse_reach,
 }
+
+
+def render_and_log_rollout(snapshot_path, task_name, environment_factory, rollout_length=1500):
+    """
+    Render a rollout from the given snapshot and log it to WandB.
+    """
+    import imageio
+    import wandb
+
+    # Modified import to use TestPolicyWrapper and improved render_with_rewards.
+    from vnl_ray.agents.ray_distributed_dmpo import TestPolicyWrapper, render_with_rewards
+
+    print(f"Rendering rollout for snapshot: {snapshot_path}")
+
+    # Create the environment
+    env = environment_factory()
+    env = wrappers.SinglePrecisionWrapper(env)
+    env = wrappers.CanonicalSpecWrapper(env, clip=False)
+
+    # Load the policy snapshot
+    try:
+        policy = tf.saved_model.load(snapshot_path)
+        # Use the improved TestPolicyWrapper
+        policy = TestPolicyWrapper(policy)
+        print(f"Successfully loaded policy from {snapshot_path}")
+    except Exception as e:
+        print(f"Error loading policy snapshot: {e}")
+        return None
+
+    # Render the rollout
+    videos_path = os.path.join(os.path.dirname(os.path.dirname(snapshot_path)), "videos")
+    os.makedirs(videos_path, exist_ok=True)
+    rendering_path = os.path.join(videos_path, f"{task_name}-manual-rollout.mp4")
+
+    print(f"Rendering rollout with {rollout_length} frames...")
+    frames = render_with_rewards(env, policy, rollout_length=rollout_length)
+
+    if frames:
+        print(f"Saving {len(frames)} frames to {rendering_path}")
+        with imageio.get_writer(rendering_path, fps=1 / env.control_timestep()) as video:
+            for frame in frames:
+                video.append_data(frame)
+
+        # Log the video to WandB
+        try:
+            wandb.init(project="mouse-reach-eval", name=f"{task_name}-manual-evaluation", resume=True)
+            wandb.log({"manual_rollout": wandb.Video(rendering_path, format="mp4")})
+            print("Video logged to WandB")
+            wandb.finish()
+        except Exception as e:
+            print(f"Error logging to WandB: {e}")
+
+        return rendering_path
+    else:
+        print("No frames were rendered!")
+        return None
+
+
+def safe_has_elements(arr):
+    """
+    Safely check if an array-like object has elements without triggering truth value ambiguity.
+
+    Args:
+        arr: Array-like object to check
+
+    Returns:
+        bool: True if the array has elements, False otherwise
+    """
+    import numpy as np
+
+    if arr is None:
+        return False
+
+    try:
+        # Convert to numpy array if it isn't already
+        np_arr = np.asarray(arr)
+        # Check size attribute which works for all numpy arrays
+        return np_arr.size > 0
+    except (TypeError, ValueError, AttributeError):
+        # Fall back to safe conversion to bool for non-array objects
+        try:
+            return bool(arr)
+        except (ValueError, TypeError):
+            return False
 
 
 @hydra.main(
@@ -464,7 +550,7 @@ def main(config: DictConfig) -> None:
 
     n_actors = dmpo_config.num_actors
 
-    def create_actors(n_actors, environment_factory, replay_server_addr):  # callalbe env factory
+    def create_actors(n_actors, environment_factory, replay_server_addr):  # callalbe env factoryory
         """Return list of requested number of actor instances."""
         actors = []
         for _ in range(n_actors):
@@ -482,29 +568,10 @@ def main(config: DictConfig) -> None:
             time.sleep(0.01)
         return actors
 
-    def create_evaluator(task_name, replay_server_addr):
-        if task_name == "rodent_imitation":
-            env_fact = functools.partial(environment_factories[task_name], random_range=0)
-        else:
-            env_fact = environment_factories[task_name]
-        evaluator = EnvironmentLoop.remote(
-            replay_server_address="",  # evaluator does not need replay server addr
-            variable_source=learner,
-            counter=counter,
-            network_factory=network_factory,
-            environment_factory=env_fact,
-            dmpo_config=dmpo_config,
-            actor_or_evaluator="evaluator",
-            snapshotter_dir=snapshotter_dir,
-            # checkpoint_snapshot_dir is not needed for normal training
-            task_name=task_name,
-        )
-        return evaluator
-
+    # IMPORTANT: In eval-only mode, only create training actors, NOT evaluators yet
     actors = []
-    evaluators = []
     if "actors_envs" in config:
-        # if the config file specify diverse actor envs
+        # if the config file specifies diverse actor envs
         # created for multi-task RL
         print(config.actors_envs)
         for name, num_actors in config.actors_envs.items():
@@ -516,78 +583,179 @@ def main(config: DictConfig) -> None:
                         replay_servers["general"],
                     )  # mixed experience replay buffer
                 elif "num_replay_servers" in config and config["num_replay_servers"] != 0:
-                    for i in range(config["num_replay_servers"]):
+                    # Handle multiple replay servers for load balancing
+                    num_replay_servers = config["num_replay_servers"]
+                    num_actor_per_replay = num_actors // num_replay_servers
+                    for i in range(num_replay_servers):
                         _name = f"{name}-{i+1}"
-                        # multiple replay servers, equally direct replay servers
-                        num_actor_per_replay = num_actors // config["num_replay_servers"]
                         actors += create_actors(
                             num_actor_per_replay,
                             environment_factories[name],
                             replay_servers[_name],
                         )
+                        print(f"ACTOR Creation: {_name}, has #{num_actor_per_replay} actors.")
                 else:
                     actors += create_actors(num_actors, environment_factories[name], replay_servers[name])
-                print(f"ACTOR Creation: {name}, has #{num_actors} of actors.")
-            evaluators.append(RemoteAsLocal(create_evaluator(name, "")))
-            print(f"EVALUTATOR Creation for task: {name}")
+                    print(f"ACTOR Creation: {name}, has #{num_actors} actors.")
     else:
-        # Get actors.
+        # Get actors for a single task
         print(f"ACTOR Creation: {n_actors}")
         if "num_replay_servers" in config.env_params:
-            num_replay_server = config.env_params["num_replay_servers"]
+            num_replay_servers = config.env_params["num_replay_servers"]
         else:
-            num_replay_server = 1
-        for i in range(num_replay_server):
+            num_replay_servers = 1
+        num_actor_per_replay = n_actors // num_replay_servers
+        for i in range(num_replay_servers):
             name = f"{config.run_config['task_name']}-{i+1}"
-            num_actor_per_replay = n_actors // num_replay_server
             actors += create_actors(
                 num_actor_per_replay,
                 environment_factories[config.run_config["task_name"]],
                 replay_servers[name],
             )
-        if config.run_config["task_name"] == "imitation_rodent":
-            env_fac = functools.partial(
-                environment_factories[config.run_config["task_name"]], always_init_at_clip_start=True
-            )  # for imitation's evaluator, force init at clip start
-        else:
-            env_fac = environment_factories[config.run_config["task_name"]]
-        evaluator = EnvironmentLoop.remote(
-            replay_server_address="",  # evaluator does not need replay server addr
-            variable_source=learner,
-            counter=counter,
-            network_factory=network_factory,
-            environment_factory=env_fac,
-            dmpo_config=dmpo_config,
-            actor_or_evaluator="evaluator",
-            snapshotter_dir=snapshotter_dir,
-            task_name=config.run_config["task_name"],
-        )
-        evaluators.append(RemoteAsLocal(evaluator))
+            print(f"ACTOR Creation: {name}, has #{num_actor_per_replay} actors.")
 
     print("Waiting until actors are ready...")
-    # Block until all actors and evaluator are ready and have called `get_variables`
-    # in learner with variable_client.update_and_wait() from _make_actor. Otherwise
-    # they will be blocked and won't be inserting data to replay table, which in
-    # turn will cause learner to be blocked.
+    # Block until all actors are ready
     for actor in actors:
         actor.isready(block=True)
-    for evaluator in evaluators:
-        evaluator.isready(block=True)
 
-    print("Actors ready, issuing run command to all")
+    # Since we don't create any evaluators yet (only actors), proceed directly to working with the checkpoint
+    print("Actors ready, preparing evaluator with proper snapshot path...")
 
-    # === Run all.
+    # Create snapshot from checkpoint if it doesn't exist
+    checkpoint_path = config.learner_params["checkpoint_to_load"]
+
+    # Extract checkpoint number from the path (handle both ckpt-NNN and checkpoint_NNN formats)
+    if "ckpt-" in checkpoint_path:
+        checkpoint_num = checkpoint_path.split("ckpt-")[-1]
+    elif "checkpoint_" in checkpoint_path:
+        checkpoint_num = checkpoint_path.split("checkpoint_")[-1]
+    else:
+        # Try to extract any number at the end of the filename
+        checkpoint_num = os.path.basename(checkpoint_path).split("-")[-1]
+
+    # Extract the run directory by finding the path segment before 'checkpoints'
+    path_parts = checkpoint_path.split("/")
+    try:
+        checkpoints_index = path_parts.index("checkpoints")
+        # Get everything up to but not including "checkpoints"
+        run_dir = "/".join(path_parts[:checkpoints_index])
+    except ValueError:
+        # Fallback if "checkpoints" isn't in the path
+        run_dir = os.path.dirname(os.path.dirname(os.path.dirname(checkpoint_path)))
+
+    # Construct the snapshot path
+    checkpoint_snapshot_dir = os.path.join(run_dir, "snapshots")
+    os.makedirs(checkpoint_snapshot_dir, exist_ok=True)
+    snapshot_path = os.path.join(checkpoint_snapshot_dir, f"policy-{checkpoint_num}")
+
+    print(f"Checkpoint path: {checkpoint_path}")
+    print(f"Extracted checkpoint number: {checkpoint_num}")
+    print(f"Run directory: {run_dir}")
+    print(f"Creating snapshot directory at: {checkpoint_snapshot_dir}")
+    print(f"Snapshot path will be: {snapshot_path}")
+
+    # Check if a policy snapshot already exists, generate one if not
+    if not os.path.exists(snapshot_path):
+        print(f"Policy snapshot doesn't exist at {snapshot_path}, will create automatically")
+        # The learner will automatically create a snapshot when evaluating
+
+    # Convert to Path object to ensure consistent handling
+    checkpoint_snapshot_dir_path = Path(checkpoint_snapshot_dir)
+
+    # Use string representation consistently
+    snapshot_path_str = str(os.path.join(checkpoint_snapshot_dir, f"policy-{checkpoint_num}"))
+
+    # Debug print to verify the directory exists
+    print(f"Verifying checkpoint snapshot directory: {checkpoint_snapshot_dir_path}")
+    print(f"Directory exists: {os.path.exists(checkpoint_snapshot_dir_path)}")
+    print(f"Directory is readable: {os.access(checkpoint_snapshot_dir_path, os.R_OK)}")
+    print(f"Snapshot path exists: {os.path.exists(snapshot_path_str)}")
+    print(f"Snapshot path is readable: {os.access(snapshot_path_str, os.R_OK)}")
+
+    # Verify snapshot_path before passing to remote function
+    if not os.path.exists(snapshot_path_str):
+        # Create empty snapshot directory if it doesn't exist
+        print(f"WARNING: Snapshot path {snapshot_path_str} doesn't exist. Creating empty directory...")
+        os.makedirs(os.path.dirname(snapshot_path_str), exist_ok=True)
+        # We won't be able to render without a valid snapshot
+
+    # Additional debug logging
+    print(f"FINAL SNAPSHOT PATH BEING PASSED: {snapshot_path_str}")
+
+    # Import the policy evaluator
+    from vnl_ray.agents.policy_evaluator import create_proper_policy_wrapper
+
+    # Later in the code where you're setting up the evaluator:
+    proper_policy = create_proper_policy_wrapper(
+        snapshot_path=snapshot_path_str, network_factory=network_factory, environment_spec=environment_spec, debug=True
+    )
+
+    # Use this properly wrapped policy for evaluation with EnvironmentLoop
+    evaluator = EnvironmentLoop.options(name="explicit_evaluator").remote(
+        replay_server_address="",
+        variable_source=learner,
+        counter=counter,
+        network_factory=network_factory,
+        environment_factory=env_fac,
+        dmpo_config=dmpo_config,
+        actor_or_evaluator="evaluator",
+        snapshotter_dir=snapshotter_dir,  # Learner's snapshot directory
+        checkpoint_snapshot_dir=str(checkpoint_snapshot_dir_path),
+        task_name=config.run_config["task_name"],
+        force_render=True,  # Force render in eval-only mode
+        snapshot_path=snapshot_path_str,  # Pass as string to avoid serialization issues
+        restored_policy=proper_policy,  # Pass the properly wrapped policy
+    )
+    evaluator = RemoteAsLocal(evaluator)
+
+    # Wait for initialization and verify the parameters were set correctly
+    print("Waiting for evaluator to initialize...")
+    evaluator.isready(block=True)
+
+    try:
+        # RemoteAsLocal wrapper makes remote calls look like local calls
+        path_verified = evaluator.verify_snapshot_path(snapshot_path_str)
+        print(f"Evaluator snapshot path verification: {path_verified}")
+    except Exception as e:
+        print(f"Error verifying snapshot path: {e}")
+        path_verified = False
+
+    # === Run only what's needed for evaluation
     if hasattr(counter, "run"):
         counter.run(block=False)
-    for actor in actors:
-        actor.run(block=False)
-    for evaluator in evaluators:
-        evaluator.run(block=False)
 
-    while True:
-        # Single call to `run` makes a fixed number of learning steps.
-        # Here we need to block, otherwise `run` calls pile up and spam the queue.
-        learner.run(block=True)
+    # Run the evaluator only if path was verified
+    if path_verified:
+        print("Running evaluator...")
+        evaluator.run(block=False)
+    else:
+        print("ERROR: Failed to verify snapshot path. Evaluator may not render correctly.")
+
+    try:
+        # Keep the script running to allow evaluators to complete episodes
+        # Periodically print status updates
+        eval_runtime = 10 * 60  # Run for 10 minutes by default
+        start_time = time.time()
+
+        print(f"Evaluation will run for {eval_runtime/60:.1f} minutes")
+
+        while time.time() - start_time < eval_runtime:
+            elapsed = time.time() - start_time
+            remaining = eval_runtime - elapsed
+            print(f"Evaluation in progress - elapsed: {elapsed:.1f}s, remaining: {remaining:.1f}s")
+
+            # Sleep for a bit but not too long, so Ctrl+C works reasonably
+            time.sleep(30)
+
+        print("Evaluation time completed. Waiting for evaluators to finish current episodes...")
+
+        # Wait for evaluators to finish current episodes
+        evaluator.isready(block=True)
+
+        print("All evaluators have completed. Exiting.")
+    except KeyboardInterrupt:
+        print("Evaluation stopped by user")
 
 
 if __name__ == "__main__":
