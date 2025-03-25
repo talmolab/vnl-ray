@@ -13,9 +13,9 @@ _CONTROL_TIMESTEP = 0.001
 _PHYSICS_TIMESTEP = 0.001
 
 
-def mouse_reach(random_state=None, actuator_type=None):
+def mouse_reach(random_state=None, actuator_type=None, config=None):
     # Load the config to pass to the task
-    config = None
+    # config = None
     try:
         # Initialize hydra with the config path
         initialize(config_path="../config")
@@ -30,6 +30,8 @@ def mouse_reach(random_state=None, actuator_type=None):
     elif actuator_type == "muscle_simple":
         mouse_xml_path = "/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/akira_arm_model_v3.xml"
     elif actuator_type == "torque":
+        mouse_xml_path = "/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/armmodel_atscale_working_balljoint_torque.xml"
+    elif actuator_type == "torque_akira":
         mouse_xml_path = "/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/akira_torque.xml"
     elif actuator_type == "position":
         mouse_xml_path = "/root/vast/eric/vnl-ray/vnl_ray/mouse_forelimb/assets_mousereach/armmodel_atscale_working_balljoint_position.xml"

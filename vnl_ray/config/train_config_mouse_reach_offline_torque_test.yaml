@@ -35,7 +35,7 @@ learner_params:
   dual_optimizer_lr: 1e-3
   # checkpoint system
   load_decoder_only: false
-  checkpoint_to_load: /root/vast/eric/vnl-ray/training/ray-mouse-mouse_reach-ckpts/14f24f18-8dc2-11ef-9a1c-2e7de45e22fb/checkpoints/dmpo_learner/ckpt-27
+  checkpoint_to_load: /root/vast/eric/vnl-ray/training/ray-mouse-mouse_reach-ckpts/53d3f8ca-8f08-11ef-bfc9-2e7de45e22fb/checkpoints/dmpo_learner/ckpt-70
   # evaluator params
   eval_average_over: 500
   discount: .95
@@ -47,3 +47,4 @@ env_params:
 eval_params:
   eval_average_over: 500
 
+  

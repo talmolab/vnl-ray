@@ -136,7 +136,7 @@ def eye_pixels_from_cameras(physics, **render_kwargs):
 render_kwargs = {"width": 640, "height": 480}
 
 
-def render_with_rewards_info(env, policy, rollout_length=500, render_vision_if_available=True):
+def render_with_rewards_info(env, policy, rollout_length=600, render_vision_if_available=True):
     """
     Generate rollout with the reward related information.
     """
@@ -172,34 +172,37 @@ def agg_backend_context(func):
         plt.close("all")  # Figure auto-closing upon backend switching is deprecated.
         matplotlib.use(orig_backend)
         return result
-    return wrapper 
+
+    return wrapper
 
 
 @agg_backend_context
-def plot_reward(idx, episode_start, rewards:dict, ylim=(-0.05, 1.1), terminated=False):
+def plot_reward(idx, episode_start, rewards: dict, ylim=(-0.05, 1.1), terminated=False):
     """
     visualization technics
     returns the rgb array of the reward composition.
     """
-    ylim = list(ylim) # to make it dynamic
+    ylim = list(ylim)  # to make it dynamic
     window_size = 250
     idx_in_this_episode = idx - episode_start
     plt.figure(figsize=(6.4, 4.8))
     for key, val in rewards.items():
         plt.plot(val[episode_start:idx], label=key)
-        plt.scatter(idx-episode_start, val[idx])
+        plt.scatter(idx - episode_start, val[idx])
     if terminated:
-        plt.axvline(x=idx-episode_start, color='r', linestyle='-')
+        plt.axvline(x=idx - episode_start, color="r", linestyle="-")
         # Add the text label
-        plt.text(idx-episode_start-8,  # Adjust the x-offset as needed
-                sum(ylim)/2,  # Adjust the y-position as needed
-                'Episode Terminated',
-                color='r',
-                rotation=90)  # Rotate the text vertically
+        plt.text(
+            idx - episode_start - 8,  # Adjust the x-offset as needed
+            sum(ylim) / 2,  # Adjust the y-position as needed
+            "Episode Terminated",
+            color="r",
+            rotation=90,
+        )  # Rotate the text vertically
     if idx_in_this_episode <= window_size:
         plt.xlim(0, window_size)
     else:
-        plt.xlim(idx_in_this_episode - window_size, idx_in_this_episode) # dynamically move xlim as time progress
+        plt.xlim(idx_in_this_episode - window_size, idx_in_this_episode)  # dynamically move xlim as time progress
     max_reward = np.max(list(rewards.values()))
     if max_reward > ylim[1]:
         ylim[1] = max_reward + 0.1
@@ -216,11 +219,11 @@ def plot_reward(idx, episode_start, rewards:dict, ylim=(-0.05, 1.1), terminated=
     s, (width, height) = canvas.print_to_buffer()
     # Convert the buffer to a PIL Image
     image = Image.frombytes("RGBA", (width, height), s)
-    rgb_array = np.array(image.convert('RGB'))
+    rgb_array = np.array(image.convert("RGB"))
     return rgb_array
 
 
-def render_with_rewards(env, policy, rollout_length=500):
+def render_with_rewards(env, policy, rollout_length=600):
     """
     render with the rewards progression graph concat alongside with the rendering
     """
@@ -231,14 +234,14 @@ def render_with_rewards(env, policy, rollout_length=500):
         rewards[key] += [rcs[key] for rcs in reward_channels]
     concat_frames = []
     episode_start = 0
-     # implement reset logics of the reward graph too.
+    # implement reset logics of the reward graph too.
     for idx, frame in enumerate(frames):
         if len(reset_idx) != 0 and idx == reset_idx[0]:
             reward_plot = plot_reward(idx, episode_start, rewards, terminated=True)
             for _ in range(50):
-                concat_frames.append(np.hstack([frame, reward_plot])) # create stoppage when episode terminates
+                concat_frames.append(np.hstack([frame, reward_plot]))  # create stoppage when episode terminates
             reset_idx.pop(0)
-            episode_start=idx
+            episode_start = idx
             continue
         concat_frames.append(np.hstack([frame, plot_reward(idx, episode_start, rewards)]))
     return concat_frames

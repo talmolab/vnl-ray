@@ -1,67 +1,97 @@
 import tensorflow as tf
-import sonnet as snt
-from acme.tf import utils as tf2_utils
-from acme import types
-from typing import List
-import numpy as np
+from typing import List, Dict, Any, Tuple, Union, Optional
 
 
-def separate_observation(observation: types.NestedTensor) -> tf.Tensor:
-    """
-    Function similar to tf2_utils.batch_concat, but returns a 2D tensor
-    specifically for the intention network to take input into the encoder
-    and decoder differently.
-
-    It separates egocentric observation (e.g., joint angles, velocities) from
-    task-specific observations (e.g., target positions) while respecting batch size.
-    """
-    observation = observation.copy()
-
-    # Separate reference and non-reference observations
-    egocentric_obs_keys = get_mouse_egocentric_obs_key()  # Use specific keys for mouse
-    task_obs_keys = [k for k in observation.keys() if k not in egocentric_obs_keys]
-
-    egocentric_obs = {k: observation.pop(k) for k in egocentric_obs_keys}
-    task_obs = {k: observation.pop(k) for k in task_obs_keys}
-
-    # Flatten each observation tensor while keeping the batch dimension intact
-    task_obs_tensors = [tf.reshape(v, [tf.shape(v)[0], -1]) for v in task_obs.values()]  # Preserve batch size
-    egocentric_obs_tensors = [tf.reshape(v, [tf.shape(v)[0], -1]) for v in egocentric_obs.values()]  # Preserve batch size
-
-    # Concatenate task and egocentric observations along the last axis
-    task_obs_tensor = tf.concat(task_obs_tensors, axis=-1) if task_obs_tensors else tf.constant([])
-    egocentric_obs_tensor = tf.concat(egocentric_obs_tensors, axis=-1) if egocentric_obs_tensors else tf.constant([])
-
-    concatenated_obs = tf.concat([task_obs_tensor, egocentric_obs_tensor], axis=-1)
-    return concatenated_obs
-    
 def get_rodent_egocentric_obs_key() -> List[str]:
     """
-    return the egocentric observation key of the rodent
+    Returns the egocentric observation keys for the rodent.
     """
     return [
-        "walker/actuator_activation",
-        "walker/appendages_pos",
-        "walker/body_height",
-        "walker/end_effectors_pos",
-        "walker/joints_pos",
-        "walker/joints_vel",
-        "walker/sensors_accelerometer",
-        "walker/sensors_force",
-        "walker/sensors_gyro",
-        "walker/sensors_torque",
-        "walker/sensors_touch",
-        "walker/sensors_velocimeter",
-        "walker/tendons_pos",
-        "walker/tendons_vel",
-        "walker/world_zaxis",
+        "rodent/egocentric_camera",
     ]
+
 
 def get_mouse_egocentric_obs_key() -> List[str]:
     """
-    Returns the observation keys for the mouse template.
+    Returns the egocentric observation keys for the mouse.
     """
     return [
         "mouse/joint_angles",
         "mouse/joint_velocities",
     ]
+
+
+def separate_observation(inputs):
+    """
+    Takes the input dictionary, separate it into task observations and egocentric observations.
+    It concatenates the task and egocentric tensors independently and then concatenates these.
+
+    Args:
+        inputs: A dictionary of name to tensors, or a tensor.
+
+    Returns:
+        Tensor corresponding to concatenated task observations and egocentric observations.
+    """
+    # If input is not a dictionary, return it as is
+    if not isinstance(inputs, dict):
+        return inputs
+
+    # Add batch dimension to all tensors if they don't have one
+    inputs_with_batch = {}
+    for k, v in inputs.items():
+        # Make sure we're dealing with a tensor, not a tuple or other structure
+        if isinstance(v, tuple) or isinstance(v, list):
+            # Convert tuple/list to tensor if needed
+            v = tf.convert_to_tensor(v)
+
+        # Check tensor shape and add batch dimension if needed
+        if hasattr(v, "shape") and hasattr(v.shape, "ndims"):
+            if v.shape.ndims == 1:
+                inputs_with_batch[k] = tf.expand_dims(v, 0)
+            else:
+                inputs_with_batch[k] = v
+        else:
+            # If it's not a tensor with shape attribute, convert it
+            tensor_v = tf.convert_to_tensor(v)
+            if tensor_v.shape.ndims == 1:
+                inputs_with_batch[k] = tf.expand_dims(tensor_v, 0)
+            else:
+                inputs_with_batch[k] = tensor_v
+
+    # Get keys for different observation types
+    task_obs_keys = []
+    egocentric_keys = get_mouse_egocentric_obs_key()
+
+    # Filter which keys go into which category
+    for k in inputs_with_batch.keys():
+        if k not in egocentric_keys:
+            task_obs_keys.append(k)
+
+    # Collect tensors
+    task_obs_tensors = [inputs_with_batch[k] for k in task_obs_keys if k in inputs_with_batch]
+    egocentric_tensors = [inputs_with_batch[k] for k in egocentric_keys if k in inputs_with_batch]
+
+    # Make sure we have compatible batch dimensions
+    if task_obs_tensors and egocentric_tensors:
+        task_batch_size = task_obs_tensors[0].shape[0]
+        ego_batch_size = egocentric_tensors[0].shape[0]
+
+        # If batch sizes don't match, adjust all tensors to batch size 1
+        if task_batch_size != ego_batch_size:
+            # Reshape all tensors to have batch size 1
+            for i in range(len(task_obs_tensors)):
+                shape = task_obs_tensors[i].shape.as_list()
+                if shape[0] != 1:
+                    task_obs_tensors[i] = tf.reshape(task_obs_tensors[i], [1, -1])
+
+            for i in range(len(egocentric_tensors)):
+                shape = egocentric_tensors[i].shape.as_list()
+                if shape[0] != 1:
+                    egocentric_tensors[i] = tf.reshape(egocentric_tensors[i], [1, -1])
+
+    # Now concatenate each group separately
+    task_obs_tensor = tf.concat(task_obs_tensors, axis=-1) if task_obs_tensors else tf.zeros((1, 0))
+    egocentric_tensor = tf.concat(egocentric_tensors, axis=-1) if egocentric_tensors else tf.zeros((1, 0))
+
+    # Finally concatenate both groups
+    return tf.concat([task_obs_tensor, egocentric_tensor], axis=-1)

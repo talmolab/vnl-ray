@@ -474,7 +474,7 @@ class IntentionNetwork(snt.Module):
         self.task_obs_size = task_obs_size
         self.action_size = action_size
         self.intention_size = intention_size
-        self.return_activations = False  # Changed from parameter value to always False
+        self.return_activations = return_activations
         self.use_multi_encoder = high_level_intention_size is not None
         self.mid_layer_sizes = mid_layer_sizes
         self.high_level_intention_size = high_level_intention_size
@@ -570,7 +570,7 @@ class IntentionNetwork(snt.Module):
         egocentric_obs = observations[..., self.task_obs_size :]
         activations_dict = {}
 
-        # Use explicit parameter value, not the instance attribute
+        # Use explicit parameter value from the method call
         should_return_activations = return_activations or return_intentions_dist
 
         if self.use_multi_encoder:
@@ -609,9 +609,10 @@ class IntentionNetwork(snt.Module):
             actions, dec_acts = self.decoder(tf2_utils.batch_concat(concatenated), return_activations=True)
             activations_dict["decoder"] = dec_acts
 
-            # Only return additional info if explicitly requested
-            if return_intentions_dist:
-                return actions, intentions_dist
+            if return_intentions_dist and return_activations:
+                return actions, intentions, activations_dict
+            elif return_intentions_dist:
+                return actions, intentions
             elif return_activations:
                 return actions, activations_dict
         else:

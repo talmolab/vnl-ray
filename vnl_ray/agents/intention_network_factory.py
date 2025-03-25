@@ -1,6 +1,6 @@
 """Network factories for distributed D4PG and DMPO agents."""
 
-from typing import Optional, Callable
+from typing import Optional, Callable, List
 
 from acme.tf import utils as tf2_utils
 from acme.tf import networks
@@ -118,6 +118,59 @@ def make_network_factory_dmpo(
             mid_layer_sizes=mid_layer_sizes,
             high_level_intention_size=high_level_intention_size,
         )
+
+    return network_factory
+
+
+def make_network_factory_dmpo_intention(
+    task_obs_size: int,
+    encoder_layer_sizes: List[int],
+    decoder_layer_sizes: List[int],
+    critic_layer_sizes: List[int],
+    intention_size: int,
+    use_tfd_independent: bool,
+    use_visual_network: bool,
+    visual_feature_size: int,
+    min_scale: float = 1e-6,  # Add missing arguments with default values
+    tanh_mean: bool = False,
+    init_scale: float = 0.7,
+    action_dist_scale: float = 0.15,
+    mid_layer_sizes: Optional[List[int]] = None,
+    high_level_intention_size: Optional[int] = None,
+):
+    """
+    Factory function to create DMPO intention networks.
+    Returns a dictionary containing the policy and critic networks.
+    """
+
+    def network_factory(action_spec):
+        # Create the intention network
+        policy_network = IntentionNetwork(
+            action_size=np.prod(action_spec.shape),
+            intention_size=intention_size,
+            task_obs_size=task_obs_size,
+            encoder_layer_sizes=encoder_layer_sizes,
+            decoder_layer_sizes=decoder_layer_sizes,
+            use_tfd_independent=use_tfd_independent,
+            min_scale=min_scale,  # Pass the missing arguments
+            tanh_mean=tanh_mean,
+            init_scale=init_scale,
+            action_dist_scale=action_dist_scale,
+        )
+
+        # Create the critic network
+        critic_network = snt.Sequential(
+            [
+                snt.nets.MLP(critic_layer_sizes, activate_final=True),
+                snt.Linear(1),
+            ]
+        )
+
+        # Return as a dictionary
+        return {
+            "policy": policy_network,
+            "critic": critic_network,
+        }
 
     return network_factory
 

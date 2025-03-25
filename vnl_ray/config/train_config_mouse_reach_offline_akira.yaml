@@ -1,0 +1,59 @@
+run_config:
+  agent_name: mouse
+  algo_name: dmpo
+  task_name: mouse_reach
+  run_name:  mouse-forelimb-reach-muscle
+  actuator_type: torque
+  margin: 0.009
+
+obs_network:
+  # observation network params
+  use_visual_network: false
+  visual_feature_size: 0
+  
+policy_network_params:
+  num_dimensions: 4  # Example value
+  tanh_mean: true
+  init_scale: 0.01
+  fixed_scale: true
+  use_tfd_independent: true
+
+learner_network:
+  # need to be consistent with the rest of the task if we want to task swichting
+  policy_layer_sizes: [512,512,512]
+  use_intention: true
+  encoder_layer_sizes: [512,512,512]
+  decoder_layer_sizes: [512,512,512]
+  critic_layer_sizes: [512,512,512]
+  intention_size: 3
+  use_multi_decoder: false
+
+learner_params:
+  # learner parameters
+  batch_size: 256
+  policy_optimizer_lr: 1e-4
+  critic_optimizer_lr: 1e-4
+  dual_optimizer_lr: 1e-3
+  # checkpoint system
+  load_decoder_only: false
+  checkpoint_to_load: #/root/vast/eric/vnl-ray/training/ray-mouse-mouse_reach-ckpts/73ce4d2e-07b7-11f0-859c-3a627a2dcb5f/checkpoints/dmpo_learner/ckpt-180 #  /root/vast/eric/vnl-ray/training/ray-mouse-mouse_reach-ckpts/bcdb18be-0701-11f0-b175-9ad8b91351a1/checkpoints/dmpo_learner/ckpt-250
+  # evaluator params
+  eval_average_over: 500
+  discount: .99
+  swap_decoder_with_jax: false
+  decoder_h5_path: #"/root/vast/eric/track-mjx/track_mjx/ppo_policy_weights.h5"
+  froze_decoder: false
+
+env_params:
+  num_actors: 1
+  num_replay_servers: 2
+  physics_timestep: 0.001
+  rollout_length: 200
+
+eval_params:
+  eval_average_over: 500
+
+checkpoint_directory: #"/root/vast/eric/vnl-ray/training/ray-mouse-mouse_reach-ckpts/73ce4d2e-07b7-11f0-859c-3a627a2dcb5f/checkpoints/dmpo_learner/ckpt-180"
+snapshot_path: "/root/vast/eric/vnl-ray/training/ray-mouse-mouse_reach-ckpts/73ce4d2e-07b7-11f0-859c-3a627a2dcb5f/snapshots/policy-180"
+render: True
+use_stochastic: False

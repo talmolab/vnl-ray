@@ -60,9 +60,7 @@ class MouseReachTask(composer.Task):
         self._reward_keys = ["distance_reward"]
 
         # Get margin from config, default to 0.01 if not provided
-        self._margin = 0.006
-        if self._config and "run_config" in self._config and "margin" in self._config.run_config:
-            self._margin = self._config.run_config.margin
+        self._margin = 0.008  # self._config.run_config["margin"]
 
         # Attach the mouse to the arena
         self._arena.attach(self._mouse)
@@ -230,9 +228,9 @@ class MouseReachTask(composer.Task):
             action: The control input to be applied to the mouse.
             random_state: A NumPy random state instance for consistent randomization.
         """
-        clipped_action = np.clip(action, -1.0, 1.0)
+        # clipped_action = np.clip(action, -1.0, 1.0)
         physics.data.ncon = 0  # disable contacts, joint limits will serve as constraints
-        self._mouse.apply_action(physics, clipped_action, random_state)
+        self._mouse.apply_action(physics, action, random_state)
 
     def after_step(self, physics, random_state):
         """
@@ -260,16 +258,15 @@ class MouseReachTask(composer.Task):
         Returns:
             Float representing the calculated reward based on the proximity to the target.
         """
-        # Check for valid physics object and geom_xpos attribute
+        # Ensure physics has the necessary attribute.
         if not hasattr(physics.named.data, "geom_xpos"):
             raise ValueError("Invalid physics object: missing geom_xpos attribute")
+        # Compute the distance between target and finger tip.
         finger_to_target_dist = np.linalg.norm(
             physics.named.data.geom_xpos["mouse/target"] - physics.named.data.geom_xpos["mouse/finger_tip"]
         )
-
-        # Use the margin from config instead of hardcoded value
+        # Use the target size and the configured margin (set in __init__) for tolerance.
         reward = rewards.tolerance(finger_to_target_dist, bounds=(0, self._target_size), margin=self._margin)
-
         self.last_reward_channels = {"distance_reward": reward}
         return reward
 
