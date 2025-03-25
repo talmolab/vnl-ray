@@ -1,0 +1,30 @@
+# Configuration for training the mouse reach task with offline torque control
+
+run_config:
+  task_name: "mouse_reach"
+  agent_name: "dmpo"
+  actuator_type: "torque"
+
+learner_params:
+  batch_size: 256
+  discount: 0.99
+  policy_optimizer_lr: 3e-4
+  critic_optimizer_lr: 3e-4
+  dual_optimizer_lr: 3e-4
+  checkpoint_to_load: null
+
+env_params:
+  num_actors: 10
+  num_replay_servers: 1
+
+learner_network:
+  use_intention: false
+  policy_layer_sizes: [256, 256]
+  critic_layer_sizes: [256, 256]
+
+obs_network:
+  use_visual_network: false
+  visual_feature_size: 128
+
+eval_params:
+  eval_average_over: 10
